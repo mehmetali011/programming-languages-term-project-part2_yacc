@@ -1,12 +1,11 @@
-calc: lex.yy.c y.tab.c
-	gcc -g lex.yy.c y.tab.c -o calc
+plainscript: lex.yy.c y.tab.c
+	gcc -g lex.yy.c y.tab.c -o plainscript
 
-lex.yy.c: y.tab.c calc.l
-	lex calc.l
+lex.yy.c: y.tab.c plainscript.l
+	lex plainscript.l
 
-y.tab.c: calc.y
-	yacc -d calc.y
+y.tab.c: plainscript.y
+	yacc -d plainscript.y
 
 clean: 
-	rm -rf lex.yy.c y.tab.c y.tab.h calc calc.dSYM
-
+	rm -rf lex.yy.c y.tab.c y.tab.h plainscript plainscript.dSYM
