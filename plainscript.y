@@ -2,40 +2,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "customStructs.h"
 
 
-typedef struct {
-    int type; // 1: NUMBER, 2: TEXT, 3: LOGIC
-    union {
-        double number;
-        char* text;
-        int logic;
-    } value;
-} TypedValue;
-
-//Variable structure
-typedef struct {
-    char* name;
-    int type;        // 1 for NUMBER , 2 for TEXT , 3 for LOGIC
-    union {
-        int number;
-        char* text;
-        int logic;
-    } value;
-} Variable;
 
 //Variable array size:100 can be extended in future.
 Variable symbolTable[100];
 int symbolCount = 0;
 
 //Methods for variable related operations
-void updateSymbolVal(char* name, int type, void* val);
+void updateSymbolVal(char* name, int type, TypedValue val);
 TypedValue symbolVal(char* name);
 void addVariable(char* name, int type);
+void inputHandler(char* name, char* message);  // Added prototype
+void printHandler(TypedValue value);  // Added prototype
 
 void yyerror(const char *s);
 int yylex(void);
 %}
+
+%code requires {
+     #include "customStructs.h"
+}
 
 //Type definition
 %union {
@@ -78,22 +66,53 @@ int yylex(void);
 %%
 
 program:
-    line
-    | line program
+    statement_list
     ;
 
-line:
-    DECLARE IDENTIFIER AS type '!' 
+statement_list:
+    statement | 
+    statement statement_list
+    ;
+
+statement:
+    assignment |
+    var_decl |
+    input_stmt|
+    print_stmt
+    ;
+
+assignment:
+    IDENTIFIER SET expression '!'
     {
-    addVariable($2, $4);
-        printf("Declared variable: %s as type %d\n", $2, $4);
-    } 
-    | IDENTIFIER SET expression '!'
-    {
-        updateSymbolVal($1, $3.type, &$3.value);
-        printf("Assigned variable: %s\n", $1);
+        updateSymbolVal($1, $3.type, $3);
+     
     }
     ;
+
+var_decl:
+    DECLARE IDENTIFIER AS type '!'
+    {
+        addVariable($2, $4);
+        
+    }
+    ;
+
+input_stmt:
+    ASK  '(' IDENTIFIER ')' '!'
+    {   
+        inputHandler($3, " Enter a value: ");
+    }   
+    | ASK '(' IDENTIFIER ',' STRING ')' '!'
+    {
+        inputHandler($3, $5);
+    }
+    ;
+
+print_stmt:
+    SAY '(' expression ')' '!'
+    {
+        printHandler($3);
+    }
 
 type:
     TYPE_NUMBER { $$ = 1; }
@@ -135,6 +154,15 @@ void addVariable(char* name, int type) {
     symbolTable[symbolCount].name = strdup(name);
     symbolTable[symbolCount].type = type;
     symbolCount++;
+    printf("Declared variable: %s as type %d\n", name, type);
+}
+
+int symbolType(char* name) {
+    for (int i = 0; i < symbolCount; i++) {
+        if (strcmp(symbolTable[i].name, name) == 0) {
+            return symbolTable[i].type;
+        }
+    }
 }
 
 TypedValue symbolVal(char* name) {
@@ -165,8 +193,7 @@ TypedValue symbolVal(char* name) {
     return result;
 }
 
-
-void updateSymbolVal(char* name, int type, void* val) {
+void updateSymbolVal(char* name, int type, TypedValue val) {
     for (int i = 0; i < symbolCount; i++) {
         if (strcmp(symbolTable[i].name, name) == 0) {
             if (symbolTable[i].type != type) {
@@ -176,21 +203,111 @@ void updateSymbolVal(char* name, int type, void* val) {
 
             switch (type) {
                 case 1: // NUMBER
-                    symbolTable[i].value.number = *((double*)val);
+                    symbolTable[i].value.number = val.value.number;
                     break;
                 case 2: // TEXT
-                    symbolTable[i].value.text = strdup((char*)val);
+                    symbolTable[i].value.text = strdup(val.value.text);
                     break;
                 case 3: // LOGIC
-                    symbolTable[i].value.logic = *((int*)val);
+                    symbolTable[i].value.logic = val.value.logic;
                     break;
             }
+            printf("Assigned variable: %s\n", name);
             return;
         }
     }
     printf("Undeclared variable: %s\n", name);
 }
+    
+void inputHandler(char* name, char* message) {
+    int i;
+    
+    // Find the variable index
+    for (i = 0; i < symbolCount; i++) {
+        if (strcmp(symbolTable[i].name, name) == 0) {
+            break;
+        }
+    }
+    
+    if (i == symbolCount) {
+        printf("Variable %s not found\n", name);
+        return;
+    }
+    
+    char buffer[256];
+    printf("%.*s\n", (int)(strlen(message) - 2), message + 1);
+    
+    switch (symbolTable[i].type) {
+        case 1: // NUMBER
+            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+                double tempNumber;
+                if (sscanf(buffer, "%lf", &tempNumber) == 1) {
+                    symbolTable[i].value.number = tempNumber;
+                    printf("Input received for variable: %s\n", name);
+                } else {
+                    printf("Type mismatch when assigning to %s\n", name);
+                }
+            }
+            break;
+            
+        case 2: // TEXT
+            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+                // Remove newline character
+                buffer[strcspn(buffer, "\n")] = 0;
+                if (buffer[0] == 34 && buffer[strlen(buffer) - 1] == 34) {
+                    if (symbolTable[i].value.text != NULL) {
+                        free(symbolTable[i].value.text);
+                    }
+                    symbolTable[i].value.text = strdup(buffer);
+                    printf("Input received for variable: %s\n", name);
+                } else {
+                    printf("Type mismatch when assigning to %s\n", name);
+                }
+            }
+            break;
 
+        case 3: // LOGIC
+            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+                int tempLogic;
+                if (sscanf(buffer, "%d", &tempLogic) == 1 && (tempLogic == 0 || tempLogic == 1)) {
+                    symbolTable[i].value.logic = tempLogic;
+                    printf("Input received for variable: %s\n", name);
+                } else {
+                    printf("Type mismatch when assigning to %s\n", name);
+                }
+            }
+            break;
+
+        default:
+            printf("Unknown type for variable %s\n", name);
+    }
+}
+
+void printHandler(TypedValue value) {
+    switch (value.type) {
+        case 1:
+            if (value.value.number == (int)value.value.number) {
+                printf("%d\n", (int)value.value.number);
+            }
+            else {
+                printf("%f\n", value.value.number);
+            }
+            break;
+        case 2:
+             printf("%.*s\n", (int)(strlen(value.value.text) - 2), value.value.text + 1);
+            break;
+        case 3:
+            if (value.value.logic == 1) {
+                printf("true\n");
+            }
+            else {
+                printf("false\n");
+            }
+            break;
+        default:
+            printf("Unkown type for SAY statement");
+    }
+}
 
 void yyerror(const char *s) {
     fprintf(stderr, "Parser error: %s\n", s);

@@ -2,6 +2,7 @@
 #include "y.tab.h"
 #include <string.h>
 #include <stdlib.h>
+#include "customStructs.h"
 
 int yylex();
 void yyerror(char *s);
