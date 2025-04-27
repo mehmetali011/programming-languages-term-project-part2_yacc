@@ -2,12 +2,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "customStructs.h" // Assuming this contains the Variable and TypedValue definitions
+#include "customStructs.h" 
 
 
 //Variable array size:100 can be extended in future.
-Variable symbolTable[100];
+#define SYMBOL_LIMIT 100
+Variable symbolTable[SYMBOL_LIMIT];
 int symbolCount = 0;
+
+FILE* logFile = NULL;
+extern int currentLine;
+
+#define ERROR(fmt, ...) do { \
+    if (logFile) fprintf(logFile, "[Error] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
+} while(0)
+
+#define INFO(fmt, ...) do { \
+    if (logFile) fprintf(logFile, "[Info] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
+} while(0)
+
 
 
 //Global skip level for nested blocks/statements
@@ -17,9 +30,9 @@ int skip_level = 0;
 static int if_chain_executed_flag = 0; //If 1, then a branch in the chain has executed.
 
 // Flags to track if skip_level was incremented specifically by the MRA for block skipping
-static int mra1_if_block_skipped = 0;        // if_stmt MRA before '{'
-static int mra3_elseif_block_skipped = 0;    // optional_elseif_list MRA before '{'
-static int mra5_else_block_skipped = 0;      // optional_else_clause MRA before '{'
+static int mra1_if_block_skipped = 0;      
+static int mra3_elseif_block_skipped = 0;   
+static int mra5_else_block_skipped = 0;    
 
 
 // Methods for variable related operations
@@ -73,7 +86,7 @@ int yylex(void);
 %token '(' ')' '{' '}' ','
 
 %type <num> type operator logic_operator
-%type <typedval> expression
+%type <typedval> expression term
 %type <boolean> condition // condition evaluates to a boolean (int 0 or 1)
 %type <num> if_stmt optional_elseif_list optional_else_clause
 
@@ -144,7 +157,7 @@ type:
 	| TYPE_LOGIC { $$ = 3; }
 	;
 
-expression:
+term:
 	NUMBER {
 		$$ = (TypedValue){ .type = 1 };
 		$$.value.number = $1;
@@ -165,6 +178,13 @@ expression:
 		$$ = symbolVal($1);
 	}
 	;
+
+expression:
+    term
+
+    //TODO: expression ifadelerinin kalanı BNF teki gibi eklenecek.
+
+
 condition: expression operator expression
 	{
 		$$ = evaluateCondition($1, $2, $3);
@@ -221,7 +241,7 @@ if_stmt:
 
 
 optional_elseif_list:
-	
+	/* empty */
 	| optional_elseif_list MAYBE '(' condition ')'
 	{
 	
@@ -290,61 +310,72 @@ optional_else_clause:
 %%
 
 void addVariable(char* name, int type) {
+
     for (int i = 0; i < symbolCount; i++) {
         if (strcmp(symbolTable[i].name, name) == 0) {
-            printf("Variable %s already declared.\n", name);
-            return;
+            ERROR("Variable '%s' already declared.", name);
+            exit(1);
         }
+    }
+
+    if (symbolCount >= SYMBOL_LIMIT) {
+        ERROR("Symbol table overflow.");
+        exit(1);
     }
 
     symbolTable[symbolCount].name = strdup(name);
+    if (symbolTable[symbolCount].name == NULL) {
+        ERROR("Memory allocation failed for variable '%s'.", name);
+        exit(1);
+    }
     symbolTable[symbolCount].type = type;
     symbolCount++;
-    printf("Declared variable: %s as type %d\n", name, type);
-}
-
-int symbolType(char* name) {
-    for (int i = 0; i < symbolCount; i++) {
-        if (strcmp(symbolTable[i].name, name) == 0) {
-            return symbolTable[i].type;
-        }
-    }
+    INFO("Declared variable: %s (type %d)", name, type);
 }
 
 TypedValue symbolVal(char* name) {
     TypedValue result;
+    result.type = 0; // default olarak invalid yapalım
+
     for (int i = 0; i < symbolCount; i++) {
         if (strcmp(symbolTable[i].name, name) == 0) {
             result.type = symbolTable[i].type;
 
             switch (symbolTable[i].type) {
-                case 1:
+                case 1: // NUMBER
                     result.value.number = symbolTable[i].value.number;
                     break;
-                case 2:
+                case 2: // TEXT
                     result.value.text = symbolTable[i].value.text;
                     break;
-                case 3:
+                case 3: // LOGIC
                     result.value.logic = symbolTable[i].value.logic;
                     break;
                 default:
-                    printf("Unknown type for variable '%s'.\n", name);
+                    ERROR("Unknown type for variable '%s'.", name);
+                    exit(1);
             }
 
             return result;
         }
     }
 
-    printf("Undeclared variable: %s\n", name);
+    ERROR("Undeclared variable: '%s'", name);
     return result;
 }
 
+
 void updateSymbolVal(char* name, int type, TypedValue val) {
+    if (name == NULL) {
+        ERROR("Invalid variable name for update.");
+        exit(1);
+    }
+
     for (int i = 0; i < symbolCount; i++) {
         if (strcmp(symbolTable[i].name, name) == 0) {
             if (symbolTable[i].type != type) {
-                printf("Type mismatch when assigning to %s\n", name);
-                return;
+                ERROR("Type mismatch when assigning to '%s'.", name);
+                exit(1);
             }
 
             switch (type) {
@@ -352,23 +383,36 @@ void updateSymbolVal(char* name, int type, TypedValue val) {
                     symbolTable[i].value.number = val.value.number;
                     break;
                 case 2: // TEXT
+                    if (symbolTable[i].value.text != NULL) {
+                        free(symbolTable[i].value.text);
+                    }
                     symbolTable[i].value.text = strdup(val.value.text);
+                    if (symbolTable[i].value.text == NULL) {
+                        ERROR("Memory allocation failed during update for '%s'.", name);
+                        exit(1);
+                    }
                     break;
                 case 3: // LOGIC
                     symbolTable[i].value.logic = val.value.logic;
                     break;
+                default:
+                    ERROR("Unknown type in update for '%s'.", name);
+                    exit(1);
             }
-            printf("Assigned variable: %s\n", name);
+            INFO("Assigned variable: %s", name);
             return;
         }
     }
-    printf("Undeclared variable: %s\n", name);
+
+    ERROR("Undeclared variable: '%s'", name);
+    exit(1);
 }
+
+
 
 void inputHandler(char* name, char* message) {
     int i;
 
-    // Find the variable index
     for (i = 0; i < symbolCount; i++) {
         if (strcmp(symbolTable[i].name, name) == 0) {
             break;
@@ -376,150 +420,173 @@ void inputHandler(char* name, char* message) {
     }
 
     if (i == symbolCount) {
-        printf("Variable %s not found\n", name);
-        return;
+        ERROR("Variable '%s' not found for input.", name);
+        exit(1);
     }
 
     char buffer[256];
-    printf("%.*s\n", (int)(strlen(message) - 2), message + 1);
+    printf("%.*s\n", (int)(strlen(message) - 2), message + 1); 
+
+    if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+        ERROR("Failed to read input for '%s'.", name);
+        exit(1);
+    }
+
+    buffer[strcspn(buffer, "\n")] = 0;
 
     switch (symbolTable[i].type) {
         case 1: // NUMBER
-            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-                double tempNumber;
-                if (sscanf(buffer, "%lf", &tempNumber) == 1) {
-                    symbolTable[i].value.number = tempNumber;
-                    printf("Input received for variable: %s\n", name);
-                } else {
-                    printf("Type mismatch when assigning to %s\n", name);
-                }
+        {
+            double tempNumber;
+            if (sscanf(buffer, "%lf", &tempNumber) == 1) {
+                symbolTable[i].value.number = tempNumber;
+                INFO("Input assigned to variable '%s' (NUMBER)", name);
+            } else {
+                ERROR("Type mismatch: Expected NUMBER for '%s'.", name);
+                exit(1);
             }
             break;
-
+        }
         case 2: // TEXT
-            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-                // Remove newline character
-                buffer[strcspn(buffer, "\n")] = 0;
-                if (buffer[0] == 34 && buffer[strlen(buffer) - 1] == 34) {
-                    if (symbolTable[i].value.text != NULL) {
-                        free(symbolTable[i].value.text);
-                    }
-                    symbolTable[i].value.text = strdup(buffer);
-                    printf("Input received for variable: %s\n", name);
-                } else {
-                    printf("Type mismatch when assigning to %s\n", name);
+        {
+            if (buffer[0] == '"' && buffer[strlen(buffer) - 1] == '"') {
+                if (symbolTable[i].value.text != NULL) {
+                    free(symbolTable[i].value.text); 
                 }
+                symbolTable[i].value.text = strdup(buffer);
+                if (symbolTable[i].value.text == NULL) {
+                    ERROR("Memory allocation failed for input TEXT of '%s'.", name);
+                    exit(1);
+                }
+                INFO("Input assigned to variable '%s' (TEXT)", name);
+            } else {
+                ERROR("Type mismatch: Expected quoted TEXT for '%s'.", name);
+                exit(1);
             }
             break;
-
+        }
         case 3: // LOGIC
-            if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-                int tempLogic;
-                if (sscanf(buffer, "%d", &tempLogic) == 1 && (tempLogic == 0 || tempLogic == 1)) {
-                    symbolTable[i].value.logic = tempLogic;
-                    printf("Input received for variable: %s\n", name);
-                } else {
-                    printf("Type mismatch when assigning to %s\n", name);
-                }
+        {
+            int tempLogic;
+            if (sscanf(buffer, "%d", &tempLogic) == 1 && (tempLogic == 0 || tempLogic == 1)) {
+                symbolTable[i].value.logic = tempLogic;
+                INFO("Input assigned to variable '%s' (LOGIC)", name);
+            } else {
+                ERROR("Type mismatch: Expected LOGIC (0 or 1) for '%s'.", name);
+                exit(1);
             }
             break;
-
+        }
         default:
-            printf("Unknown type for variable %s\n", name);
+            ERROR("Unknown type for variable '%s' during input.", name);
+            exit(1);
     }
 }
 
+
 void printHandler(TypedValue value) {
     switch (value.type) {
-        case 1:
+        case 1: // NUMBER
             if (value.value.number == (int)value.value.number) {
                 printf("%d\n", (int)value.value.number);
             } else {
                 printf("%f\n", value.value.number);
             }
             break;
-        case 2:
+
+        case 2: // TEXT
             printf("%.*s\n", (int)(strlen(value.value.text) - 2), value.value.text + 1);
             break;
-        case 3:
+
+        case 3: // LOGIC
             if (value.value.logic == 1) {
-                printf("true\n");
+                printf("RIGHT\n");
             } else {
-                printf("false\n");
+                printf("WRONG\n");
             }
             break;
+
         default:
-            printf("Unkown type for SAY statement");
+            ERROR("Unknown type for SAY statement.");
+            exit(1);
     }
 }
 
+
 int evaluateCondition(TypedValue left, int operator, TypedValue right) {
     if (left.type != right.type) {
-        printf("Type mismatch in condition\n");
-        return 0;
+        ERROR("Type mismatch in condition: left.type = %d, right.type = %d", left.type, right.type);
+        exit(1);
     }
 
     switch (left.type) {
-        case 1:
+        case 1: // NUMBER
             switch (operator) {
-                case 1:
-                    return left.value.number == right.value.number;
-                case 2:
-                    return left.value.number != right.value.number;
-                case 3:
-                    return left.value.number < right.value.number;
-                case 4:
-                    return left.value.number > right.value.number;
-                case 5:
-                    return left.value.number <= right.value.number;
-                case 6:
-                    return left.value.number >= right.value.number;
+                case 1: return left.value.number == right.value.number;
+                case 2: return left.value.number != right.value.number;
+                case 3: return left.value.number < right.value.number;
+                case 4: return left.value.number > right.value.number;
+                case 5: return left.value.number <= right.value.number;
+                case 6: return left.value.number >= right.value.number;
                 default:
-                    printf("Unknown operator in condition\n");
-                    return 0;
+                    ERROR("Unknown operator '%d' in NUMBER condition.", operator);
+                    exit(1);
             }
-        case 2:
+
+        case 2: // TEXT
             switch (operator) {
-                case 1:
-                    return strcmp(left.value.text, right.value.text) == 0;
-                case 2:
-                    return strcmp(left.value.text, right.value.text) != 0;
+                case 1: return strcmp(left.value.text, right.value.text) == 0;
+                case 2: return strcmp(left.value.text, right.value.text) != 0;
                 default:
-                    printf("Unknown operator in condition\n");
-                    return 0;
+                    ERROR("Unknown operator '%d' in TEXT condition.", operator);
+                    exit(1);
             }
-        case 3:
+
+        case 3: // LOGIC
             switch (operator) {
-                case 1:
-                    return left.value.logic == right.value.logic;
-                case 2:
-                    return left.value.logic != right.value.logic;
+                case 1: return left.value.logic == right.value.logic;
+                case 2: return left.value.logic != right.value.logic;
                 default:
-                    printf("Unknown operator in condition\n");
-                    return 0;  
+                    ERROR("Unknown operator '%d' in LOGIC condition.", operator);
+                    exit(1);
             }
+
         default:
-            printf("Unknown type in condition\n");
-            return 0;
+            ERROR("Unknown type '%d' in condition.", left.type);
+            exit(1);
     }
 }
 
 int evaluateLogic(int leftCondition, int operator, int rightCondition) {
     switch (operator) {
-        case 1:
+        case 1: // BOTH 
             return leftCondition && rightCondition;
-        case 2:
+        case 2: // EITHER
             return leftCondition || rightCondition;
         default:
-            printf("Unknown operator in logic\n");
-            return 0;     
+            ERROR("Unknown logic operator '%d'.", operator);
+            exit(1);
     }
 }
 
+
 void yyerror(const char *s) {
-    fprintf(stderr, "Parser error: %s\n", s);
+    fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
 }
 
 int main() {
-    return yyparse();
+    logFile = fopen("program_log.txt" , "w");
+
+    if (logFile == NULL) {
+        printf("Failed to open log file.\n");
+        return 1;
+    }
+
+    int result = yyparse();
+    if(result == 1){
+        fprintf(logFile, "\nSyntax Error at line %d.",currentLine);
+    }
+    fclose(logFile);
+
+    return result;
 }

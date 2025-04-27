@@ -67,6 +67,7 @@ PlainScript's BNF
 	<assignment> ::= <identifier> "SET" <expression> "!"
 
 	<input_stmt> ::= "ASK" "(" <identifier> ")!"
+					| "ASK" "(" <identifier> "," <string> ")!"
 
 	<return_stmt> ::= "RETURN" <expression> "!"
 	<throw_stmt> ::= "THROW" <expression> "!"
@@ -77,12 +78,12 @@ PlainScript's BNF
                      	"CATCH" "(" <identifier> ")" "{" <statement_list> "}" 
                      	"FINALLY" "{" <statement_list> "}"
 
-	<if_stmt> ::= "ISIT" "(" <condition> ")" "{" <statement_list> "}"
-             	| "ISIT" "(" <condition> ")" "{" <statement_list> "}" <elseif_list> "OTHERWISE" "{" <statement_list> "}"
-             	| "ISIT" "(" <condition> ")" "{" <statement_list> "}" <elseif_list>
+	<if_stmt> ::= "ISIT" "(" <condition> ")" "{" <statement_list> "}" <opt_elseif_stmt> <opt_else_clause>
 
-	<elseif_list > ::= "MAYBE" "(" <condition> ")" "{" <statement_list> "}" 
-                	| "MAYBE" "(" <condition> ")" "{" <statement_list> "}" <elseif_list>
+	<opt_elseif_stmt> ::= ε | <opt_elseif_stmt> "MAYBE" "(" <condition> ")" "{" <statement_list> "}"
+
+	<opt_else_clause> ::= ε | "OTHERWISE" "{" <statement_list> "}"
+
 
 	<while_stmt> ::= "DURING" "(" <condition> ")" "{" <statement_list> "}"
 

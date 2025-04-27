@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include "customStructs.h"
 
+int currentLine = 1;
 int yylex();
 void yyerror(char *s);
 %}
@@ -59,8 +60,8 @@ void yyerror(char *s);
 [a-zA-Z_][a-zA-Z0-9_]*  { yylval.identifier = strdup(yytext); return IDENTIFIER; }
 
 "//".*              { /* comment, ignore */ }
-
-[ \t\r\n]+          { /* whitespace, ignore */ }
+\n                  { currentLine++;}
+[ \t\r]+            { /* whitespace, ignore */ }
 
 "("                 { return '('; }
 ")"                 { return ')'; }
@@ -68,6 +69,7 @@ void yyerror(char *s);
 "}"                 { return '}'; }
 ","                 { return ','; }
 "!"                 { return '!'; }
+
 
 .                   { yyerror("unexpected character"); }
 
