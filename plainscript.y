@@ -193,6 +193,8 @@ condition: expression operator expression
 	{
 		$$ = evaluateLogic($1, $2, $3);
 	}
+    | LOGIC_TRUE {$$ = 1;}  
+    | LOGIC_FALSE {$$ = 0;}
 	;
 
 operator:
