@@ -30,7 +30,6 @@ void yyerror(char *s);
 "SAY"               { return SAY; }
 "DO"                { return DO; }
 
-
 "NUMBER"            { return TYPE_NUMBER; }
 "TEXT"              { return TYPE_TEXT; }
 "LOGIC"             { return TYPE_LOGIC; }

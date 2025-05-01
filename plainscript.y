@@ -5,6 +5,7 @@
 #include "customStructs.h" 
 
 
+//Variable array size:100 can be extended in future.
 #define SYMBOL_LIMIT 100
 Variable symbolTable[SYMBOL_LIMIT];
 int symbolCount = 0;
@@ -20,15 +21,21 @@ extern int currentLine;
     if (logFile) fprintf(logFile, "[Info] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
 } while(0)
 
-int skip_level = 0; 
-static int if_chain_executed_flag = 0;
-static int while_chain_executed_flag = 0;
 
+
+//Global skip level for nested blocks/statements
+int skip_level = 0; 
+
+//Flag to track if any branch (ISIT, MAYBE, OTHERWISE) in the CURRENT chain has executed.
+static int if_chain_executed_flag = 0; //If 1, then a branch in the chain has executed.
+
+// Flags to track if skip_level was incremented specifically by the MRA for block skipping
 static int mra1_if_block_skipped = 0;      
 static int mra3_elseif_block_skipped = 0;   
 static int mra5_else_block_skipped = 0;    
-static int mra1_while_block_skipped = 0;
 
+
+// Methods for variable related operations
 void updateSymbolVal(char* name, int type, TypedValue val);
 TypedValue symbolVal(char* name);
 void addVariable(char* name, int type);
@@ -36,22 +43,18 @@ void inputHandler(char* name, char* message);
 void printHandler(TypedValue value); 	
 int evaluateCondition(TypedValue left, int operator, TypedValue right);
 int evaluateLogic(int leftCondition, int operator, int rightCondition); 
-// (New)
-/* Symbol table'a ekle */
-Function functionTable[50];
-int functionCount = 0;
-
-void setReturnValue(TypedValue value);
-
 
 void yyerror(const char *s);
 int yylex(void);
 %}
 
+
+//Custom structs header file inclusion
 %code requires {
 	#include "customStructs.h"
 }
 
+//Type definition
 %union {
 	int boolean;
 	double number;
@@ -59,12 +62,12 @@ int yylex(void);
 	char* identifier;
 	int num;
 	TypedValue typedval;
-	ParamList param_list_val;
-    	ArgList arg_list_val;
+  
 }
 
 %start program
 
+//Token definition
 %token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY DO
 %token TYPE_NUMBER TYPE_TEXT TYPE_LOGIC
 %token <boolean> LOGIC_TRUE LOGIC_FALSE
@@ -84,13 +87,8 @@ int yylex(void);
 
 %type <num> type operator logic_operator
 %type <typedval> expression term
-%type <boolean> condition
+%type <boolean> condition // condition evaluates to a boolean (int 0 or 1)
 %type <num> if_stmt optional_elseif_list optional_else_clause
-// (New types)
-%type <param_list_val> param_list
-%type <arg_list_val> arg_list
-%type <num> func_decl func_call
-
 
 %%
 
@@ -99,78 +97,17 @@ program:
 	;
 
 statement_list:
-    /* empty */
-    | statement statement_list
-    ;
+	/* empty */
+	| statement statement_list
+	;
 
 statement:
 	assignment |
 	var_decl |
-	input_stmt |
+	input_stmt|
 	print_stmt |
-	if_stmt |
-	func_decl |
-	func_call 
-	//return_stmt
+	if_stmt
 	;
-	
-// (New)
-/* Fonksiyon tanımlama */
-func_decl:
-    DO IDENTIFIER '(' param_list ')' '{' statement_list '}' '!' 
-    {
-        addFunction($2, $4); // $4 param_list'i temsil eder
-    }
-    ;
-// (New)
-param_list:
-    /* empty */ {
-        $$.params = NULL;
-        $$.paramCount = 0;
-    }
-    | IDENTIFIER AS type {
-        $$.params = malloc(sizeof(Param));
-        $$.params[0].name = strdup($1);
-        $$.params[0].type = $3;
-        $$.paramCount = 1;
-    }
-    | param_list ',' IDENTIFIER AS type {
-        $$.params = realloc($1.params, ($1.paramCount + 1) * sizeof(Param));
-        $$.params[$1.paramCount].name = strdup($3);
-        $$.params[$1.paramCount].type = $5;
-        $$.paramCount = $1.paramCount + 1;
-    }
-    ;
-
-// (New)
-/* Fonksiyon çağırma */
-
-
-/* Fonksiyon çağırma */
-
-    
-arg_list:
-    /* empty */ {
-        $$.args = NULL;
-        $$.argCount = 0;
-    }
-    | expression {
-        $$.args = malloc(sizeof(TypedValue));
-        $$.args[0] = $1;
-        $$.argCount = 1;
-    }
-    | arg_list ',' expression {
-        $$.args = realloc($1.args, ($1.argCount + 1) * sizeof(TypedValue));
-        $$.args[$1.argCount] = $3;
-        $$.argCount = $1.argCount + 1;
-    }
-    ;
-
-func_call:
-    IDENTIFIER '(' arg_list ')' '!' {
-        callFunction($1, $3);
-    }
-    ;
 
 assignment:
 	IDENTIFIER SET expression '!'
@@ -290,7 +227,8 @@ expression:
         $$.value.number = $1.value.number / $3.value.number;
     }
     ;
-	
+
+
 condition: expression operator expression
 	{
 		$$ = evaluateCondition($1, $2, $3);
@@ -310,30 +248,16 @@ logic_operator:
 	BOTH { $$= 1; } | EITHER {$$ = 2; }
 	;
 
-while_stmt:
-    DURING '(' condition ')'
-    {
-        if (skip_level == 0 && $3) {  // Koşul doğruysa blok çalışır
-            INFO("Loop condition true, executing once.");
-        } else {
-            skip_level++;  // Koşul yanlışsa blok atlanır
-        }
-    }
-    '{' statement_list '}'
-    {
-        if (skip_level > 0) skip_level--;
-    }
-    ;
-
-    
 
 
 if_stmt:
+
 	{
-		if_chain_executed_flag = 0;
+		if_chain_executed_flag = 0; //Reset the flag for this chain. Every new chain (if_stmt) should have this flag reset.
 	}
 	ISIT '(' condition ')'
-	{
+	{   
+		
 		int condition_result = $4; 
 		int execute_this_block = 0;
 
@@ -343,11 +267,12 @@ if_stmt:
 		}
 
 		if (!execute_this_block && skip_level == 0) {
-			skip_level++;
-			mra1_if_block_skipped = 1; 
+			 skip_level++;
+			 mra1_if_block_skipped = 1; 
 		} else {
-			mra1_if_block_skipped = 0; 
+			 mra1_if_block_skipped = 0; 
 		}
+
 	}
 	'{' statement_list '}'
 	{
@@ -360,31 +285,38 @@ if_stmt:
 	optional_else_clause
 	;
 
+
 optional_elseif_list:
 	/* empty */
 	| optional_elseif_list MAYBE '(' condition ')'
 	{
+	
 		int condition_result = $4; 
 		int execute_this_block = 0; 
+
 
 		if (skip_level == 0 && if_chain_executed_flag == 0 && condition_result) {
 			execute_this_block = 1;
 			if_chain_executed_flag = 1; 
+           
 		} 
 
 		if (!execute_this_block && skip_level == 0) {
-			skip_level++;
-			mra3_elseif_block_skipped = 1;
+			 skip_level++;
+			 mra3_elseif_block_skipped = 1;
 		} else {
-			mra3_elseif_block_skipped = 0; 
+			 mra3_elseif_block_skipped = 0; 
 		}
+       
 	}
 	'{' statement_list '}'
 	{
+
 		if (mra3_elseif_block_skipped && skip_level > 0) {
 			skip_level--;
 		}
 		mra3_elseif_block_skipped = 0; 
+
 	}
 	;
 
@@ -392,19 +324,23 @@ optional_else_clause:
 	/* empty */
 	| OTHERWISE
 	{
+		
 		int execute_this_block = 0;
+
 
 		if (skip_level == 0 && if_chain_executed_flag == 0) {
 			execute_this_block = 1;
 			if_chain_executed_flag = 1; 
 		} 
 
+
 		if (!execute_this_block && skip_level == 0) {
-			skip_level++;
-			mra5_else_block_skipped = 1; 
+			 skip_level++;
+			 mra5_else_block_skipped = 1; 
 		} else {
-			mra5_else_block_skipped = 0; 
+			 mra5_else_block_skipped = 0; 
 		}
+      
 	}
 	'{' statement_list '}'
 	{
@@ -412,38 +348,12 @@ optional_else_clause:
 			skip_level--;
 		}
 		mra5_else_block_skipped = 0; 
+
 	}
 	;
 
 
 %%
-
-void addFunction(char* name, ParamList params) {
-    if (functionCount >= 50) {
-        fprintf(stderr, "Function table overflow!\n");
-        exit(1);
-    }
-    functionTable[functionCount].name = strdup(name);
-    functionTable[functionCount].params = params;
-    functionCount++;
-}
-
-void callFunction(char* name, ArgList args) {
-    for (int i = 0; i < functionCount; i++) {
-        if (strcmp(functionTable[i].name, name) == 0) {
-            // Parametre kontrolü
-            if (functionTable[i].params.paramCount != args.argCount) {
-                fprintf(stderr, "Parameter count mismatch for %s\n", name);
-                exit(1);
-            }
-            // Fonksiyon gövdesini çalıştır (sonraki adım)
-            printf("Calling function: %s\n", name);
-            return;
-        }
-    }
-    fprintf(stderr, "Function not found: %s\n", name);
-    exit(1);
-}
 
 void addVariable(char* name, int type) {
 
