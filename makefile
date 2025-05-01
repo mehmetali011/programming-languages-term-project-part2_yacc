@@ -1,16 +1,11 @@
-CC = gcc
-CFLAGS = -g -Wall
+plainscript: lex.yy.c y.tab.c
+	gcc -g lex.yy.c y.tab.c -o plainscript
 
-all: plainscript
+lex.yy.c: y.tab.c plainscript.l
+	lex plainscript.l
 
-plainscript: plainscript.tab.c lex.yy.c runtime.c
-	$(CC) $(CFLAGS) -o $@ $^
+y.tab.c: plainscript.y
+	yacc -d plainscript.y
 
-plainscript.tab.c: plainscript.y
-	bison -d plainscript.y
-
-lex.yy.c: plainscript.l
-	flex plainscript.l
-
-clean:
-	rm -f plainscript plainscript.tab.* lex.yy.c program_log.txt
+clean: 
+	rm -rf lex.yy.c y.tab.c y.tab.h plainscript plainscript.dSYM
