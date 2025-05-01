@@ -12,7 +12,7 @@ typedef struct {
 
 typedef struct {
     char* name;
-    int type;        // 1 for NUMBER , 2 for TEXT , 3 for LOGIC
+    int type;        // 1 for NUMBER, 2 for TEXT, 3 for LOGIC
     union {
         double number;
         char* text;
@@ -20,9 +20,20 @@ typedef struct {
     } value;
 } Variable;
 
+typedef struct {
+    char** names;
+    int count;
+} ParamList;
 
+typedef struct {
+    TypedValue* args;
+    int count;
+} ArgList;
 
-
-//Other structs can be added here
+typedef struct {
+    char* name;
+    ParamList params;
+    TypedValue* body;
+} Function;
 
 #endif // CUSTOM_STRUCTS_H
