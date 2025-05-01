@@ -70,10 +70,8 @@ void yyerror(char *s);
 ","                 { return ','; }
 "!"                 { return '!'; }
 
-
 .                   { yyerror("unexpected character"); }
 
 %%
 
 int yywrap(void) { return 1; }
-
