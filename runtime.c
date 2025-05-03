@@ -5,8 +5,42 @@
 
 Function functionTable[50];
 int functionCount = 0;
+extern int skip_level;  // skip_level değişkenini extern olarak tanımlıyoruz
+
+// While döngüsü için gerekli değişkenler
+int while_condition = 0;
+int while_body_executed = 0;
+int while_loop_count = 0;
 
 void executeWhileLoop(int condition) {
+    printf("DEBUG: executeWhileLoop called with condition: %d\n", condition);
+    while_condition = condition;
+    if (condition) {
+        skip_level = 0;
+        while_body_executed = 1;
+        while_loop_count++;
+        printf("DEBUG: Setting skip_level to 0 and while_body_executed to 1 (loop count: %d)\n", while_loop_count);
+    } else {
+        skip_level++;
+        while_body_executed = 0;
+        printf("DEBUG: Incrementing skip_level and setting while_body_executed to 0\n");
+    }
+}
+
+void checkWhileCondition() {
+    printf("DEBUG: checkWhileCondition called (loop count: %d)\n", while_loop_count);
+    printf("DEBUG: Current while_condition: %d\n", while_condition);
+    
+    if (while_body_executed) {
+        if (!while_condition) {
+            skip_level++;
+            printf("DEBUG: Condition is false, incrementing skip_level\n");
+        } else {
+            skip_level = 0;
+            printf("DEBUG: Condition is still true, resetting skip_level\n");
+        }
+        while_body_executed = 0;
+    }
 }
 
 void executeForLoop(char* var, double start, double end) {

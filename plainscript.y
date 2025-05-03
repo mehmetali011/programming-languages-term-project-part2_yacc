@@ -13,6 +13,11 @@ int symbolCount = 0;
 FILE* logFile = NULL;
 extern int currentLine;
 
+// While döngüsü için gerekli değişkenler
+extern int while_condition;
+extern int while_body_executed;
+extern int while_loop_count;
+
 #define ERROR(fmt, ...) do { \
     if (logFile) fprintf(logFile, "[Error] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
 } while(0)
@@ -44,6 +49,8 @@ void inputHandler(char* name, char* message);
 void printHandler(TypedValue value); 	
 int evaluateCondition(TypedValue left, int operator, TypedValue right);
 int evaluateLogic(int leftCondition, int operator, int rightCondition); 
+void executeWhileLoop(int condition);
+void checkWhileCondition();
 
 void yyerror(const char *s);
 int yylex(void);
@@ -115,6 +122,7 @@ statement:
     	| if_stmt
     	| func_decl
     	| func_call
+    	| while_stmt
     	;
 
 assignment:
@@ -414,6 +422,34 @@ optional_else_clause:
 	}
 	;
 
+while_stmt:
+    DURING '(' condition ')' '{' statement_list '}'
+    {
+        if(skip_level == 0) {
+            executeWhileLoop($3);
+            if(while_condition) {
+                skip_level = 0;
+                printf("DEBUG: While body will be executed\n");
+            } else {
+                skip_level++;
+                printf("DEBUG: While body will be skipped\n");
+            }
+        }
+        checkWhileCondition();
+        if(while_condition && skip_level == 0) {
+            printf("DEBUG: Repeating while loop\n");
+            // Koşulu yeniden değerlendir
+            TypedValue left = symbolVal("x");
+            TypedValue right = (TypedValue){ .type = 1, .value.number = 5 };
+            int new_condition = evaluateCondition(left, 3, right); // 3 = SMALLER
+            printf("DEBUG: Re-evaluated condition: %d (x = %f)\n", new_condition, left.value.number);
+            while_condition = new_condition;
+            if(new_condition) {
+                YYACCEPT; // Döngüyü tekrar başlat
+            }
+        }
+    }
+    ;
 
 %%
 
@@ -676,8 +712,15 @@ int evaluateLogic(int leftCondition, int operator, int rightCondition) {
             exit(1);
     }
 }
+/*
+void executeWhileLoop(int condition) {
+    // Implementation of executeWhileLoop function
+}
 
-
+void checkWhileCondition() {
+    // Implementation of checkWhileCondition function
+}
+*/
 void yyerror(const char *s) {
     fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
 }

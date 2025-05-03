@@ -1,5 +1,6 @@
-DO greet(name AS TEXT) {
-    SAY("Hello, " PLUS name)!
+DECLARE x AS NUMBER!
+x SET 0!
+DURING (x SMALLER 5) {
+    SAY(x)!
+    x SET x PLUS 1!
 }
-
-greet("John")!
