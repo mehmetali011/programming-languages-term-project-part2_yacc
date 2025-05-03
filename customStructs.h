@@ -12,7 +12,7 @@ typedef struct {
 
 typedef struct {
     char* name;
-    int type;        // 1 for NUMBER, 2 for TEXT, 3 for LOGIC
+    int type;        // 1 for NUMBER , 2 for TEXT , 3 for LOGIC
     union {
         double number;
         char* text;
@@ -21,19 +21,28 @@ typedef struct {
 } Variable;
 
 typedef struct {
+    char* name;
+    char** paramNames;
+    int paramCount;
+    struct stmt_node* body; 
+} Function;
+
+struct stmt_node; // forward declaration
+
+struct param_list_node {
     char** names;
     int count;
-} ParamList;
+};
 
-typedef struct {
+struct expr_list_node {
     TypedValue* args;
     int count;
-} ArgList;
+};
 
-typedef struct {
-    char* name;
-    ParamList params;
-    TypedValue* body;
-} Function;
+extern Function functionTable[50];
+extern int functionCount;
+
+
+//Other structs can be added here
 
 #endif // CUSTOM_STRUCTS_H

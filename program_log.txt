@@ -1,0 +1,2 @@
+[Error] Line 2: Undeclared variable: 'name'
+[Info] Line 3: Function defined: greet
