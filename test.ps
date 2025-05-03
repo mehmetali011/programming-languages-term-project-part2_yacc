@@ -1,6 +1,10 @@
-DECLARE x AS NUMBER!
-x SET 0!
-DURING (x SMALLER 5) {
-    SAY(x)!
-    x SET x PLUS 1!
+TRY {
+    THROW("Bir hata oluştu!")!
 }
+CATCH(errorMessage) {
+    SAY(errorMessage)!
+}
+FINALLY {
+    SAY("Temizlik yapılıyor...")!
+}
+

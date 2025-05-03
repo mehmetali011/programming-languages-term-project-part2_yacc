@@ -13,11 +13,6 @@ int symbolCount = 0;
 FILE* logFile = NULL;
 extern int currentLine;
 
-// While döngüsü için gerekli değişkenler
-extern int while_condition;
-extern int while_body_executed;
-extern int while_loop_count;
-
 #define ERROR(fmt, ...) do { \
     if (logFile) fprintf(logFile, "[Error] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
 } while(0)
@@ -30,6 +25,12 @@ extern int while_loop_count;
 
 //Global skip level for nested blocks/statements
 int skip_level = 0; 
+
+// Exception handling flags and variables
+int in_try_block = 0;
+int exception_thrown = 0;
+int catch_block_skipped = 0;
+char* exception_message = NULL;
 
 //Flag to track if any branch (ISIT, MAYBE, OTHERWISE) in the CURRENT chain has executed.
 static int if_chain_executed_flag = 0; //If 1, then a branch in the chain has executed.
@@ -49,8 +50,6 @@ void inputHandler(char* name, char* message);
 void printHandler(TypedValue value); 	
 int evaluateCondition(TypedValue left, int operator, TypedValue right);
 int evaluateLogic(int leftCondition, int operator, int rightCondition); 
-void executeWhileLoop(int condition);
-void checkWhileCondition();
 
 void yyerror(const char *s);
 int yylex(void);
@@ -116,14 +115,15 @@ statement_list:
 
 statement:
 	assignment
-    	| var_decl
-    	| input_stmt
-    	| print_stmt
-    	| if_stmt
-    	| func_decl
-    	| func_call
-    	| while_stmt
-    	;
+    | var_decl
+    | input_stmt
+    | print_stmt
+    | if_stmt
+    | func_decl
+    | func_call
+    | try_stmt
+    | throw_stmt
+    ;
 
 assignment:
 	IDENTIFIER SET expression '!'
@@ -421,35 +421,123 @@ optional_else_clause:
 
 	}
 	;
+	
+throw_stmt:
+	THROW '(' expression ')' '!'
+	{
+		if(skip_level == 0) {
+			if(in_try_block) {
+				exception_thrown = 1;
+				
+				if($3.type == 2) { // TEXT
+					if(exception_message != NULL) {
+						free(exception_message);
+					}
+					exception_message = strdup($3.value.text);
+					if(exception_message == NULL) {
+						ERROR("Memory allocation failed for exception message");
+						exit(1);
+					}
+				} else {
+					ERROR("Exception message must be of TEXT type");
+					exit(1);
+				}
+				
+				skip_level++;
+			} else {
+				ERROR("THROW statement outside of TRY block");
+				exit(1);
+			}
+		}
+	}
+	;
 
-while_stmt:
-    DURING '(' condition ')' '{' statement_list '}'
-    {
-        if(skip_level == 0) {
-            executeWhileLoop($3);
-            if(while_condition) {
-                skip_level = 0;
-                printf("DEBUG: While body will be executed\n");
-            } else {
-                skip_level++;
-                printf("DEBUG: While body will be skipped\n");
-            }
-        }
-        checkWhileCondition();
-        if(while_condition && skip_level == 0) {
-            printf("DEBUG: Repeating while loop\n");
-            // Koşulu yeniden değerlendir
-            TypedValue left = symbolVal("x");
-            TypedValue right = (TypedValue){ .type = 1, .value.number = 5 };
-            int new_condition = evaluateCondition(left, 3, right); // 3 = SMALLER
-            printf("DEBUG: Re-evaluated condition: %d (x = %f)\n", new_condition, left.value.number);
-            while_condition = new_condition;
-            if(new_condition) {
-                YYACCEPT; // Döngüyü tekrar başlat
-            }
-        }
-    }
-    ;
+try_stmt:
+	TRY 
+	{
+		if(skip_level == 0) {
+			in_try_block = 1;
+			exception_thrown = 0;
+		}
+	}
+	'{' statement_list '}'
+	{
+		if(skip_level == 0) {
+			in_try_block = 0;
+		}
+		else if(exception_thrown && skip_level == 1) {
+			skip_level--;
+		}
+	}
+	optional_catch_clause
+	optional_finally_clause
+	;
+
+optional_catch_clause:
+	/* empty */
+	| CATCH '(' IDENTIFIER ')'
+	{
+		if(skip_level == 0) {
+			if(exception_thrown) {
+				int found = 0;
+				for(int i = 0; i < symbolCount; i++) {
+					if(strcmp(symbolTable[i].name, $3) == 0) {
+						found = 1;
+						if(symbolTable[i].type == 2) { // TEXT
+							if(symbolTable[i].value.text != NULL) {
+								free(symbolTable[i].value.text);
+							}
+							symbolTable[i].value.text = strdup(exception_message);
+							if(symbolTable[i].value.text == NULL) {
+								ERROR("Memory allocation failed for exception variable");
+								exit(1);
+							}
+						} else {
+							ERROR("Exception variable must be of TEXT type");
+							exit(1);
+						}
+						break;
+					}
+				}
+				if(!found) {
+					addVariable($3, 2); // TEXT type
+					TypedValue tv;
+					tv.type = 2;
+					tv.value.text = strdup(exception_message);
+					updateSymbolVal($3, 2, tv);
+				}
+				
+				exception_thrown = 0;
+				catch_block_skipped = 0;
+			} else {
+				skip_level++;
+				catch_block_skipped = 1;
+			}
+		}
+	}
+	'{' statement_list '}'
+	{
+		if(catch_block_skipped && skip_level > 0) {
+			skip_level--;
+			catch_block_skipped = 0;
+		}
+	}
+	;
+
+optional_finally_clause:
+	/* empty */
+	| FINALLY
+	{
+		// Finally block always executes
+		if(skip_level > 0 && !in_try_block) {
+			skip_level = 0;
+		}
+	}
+	'{' statement_list '}'
+	;
+
+
+
 
 %%
 
@@ -712,15 +800,8 @@ int evaluateLogic(int leftCondition, int operator, int rightCondition) {
             exit(1);
     }
 }
-/*
-void executeWhileLoop(int condition) {
-    // Implementation of executeWhileLoop function
-}
 
-void checkWhileCondition() {
-    // Implementation of checkWhileCondition function
-}
-*/
+
 void yyerror(const char *s) {
     fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
 }
