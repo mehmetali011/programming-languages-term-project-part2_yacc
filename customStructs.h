@@ -20,7 +20,27 @@ typedef struct {
     } value;
 } Variable;
 
+typedef struct {
+    char* name;
+    char** paramNames;
+    int paramCount;
+    struct stmt_node* body; 
+} Function;
 
+struct stmt_node; // forward declaration
+
+struct param_list_node {
+    char** names;
+    int count;
+};
+
+struct expr_list_node {
+    TypedValue* args;
+    int count;
+};
+
+extern Function functionTable[50];
+extern int functionCount;
 
 
 //Other structs can be added here

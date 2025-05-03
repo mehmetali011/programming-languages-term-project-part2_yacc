@@ -1,8 +1,6 @@
 DECLARE x AS NUMBER!
-DECLARE y AS TEXT!
-
-x SET 10 PLUS 20!
-y SET "Hello" PLUS "World"!
-
-SAY(x)!
-SAY(y)!
+x SET 0!
+DURING (x SMALLER 5) {
+    SAY(x)!
+    x SET x PLUS 1!
+}

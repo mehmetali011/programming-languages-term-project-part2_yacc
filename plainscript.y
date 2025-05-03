@@ -13,6 +13,11 @@ int symbolCount = 0;
 FILE* logFile = NULL;
 extern int currentLine;
 
+// While döngüsü için gerekli değişkenler
+extern int while_condition;
+extern int while_body_executed;
+extern int while_loop_count;
+
 #define ERROR(fmt, ...) do { \
     if (logFile) fprintf(logFile, "[Error] Line %d: " fmt "\n", currentLine, ##__VA_ARGS__); \
 } while(0)
@@ -38,11 +43,14 @@ static int mra5_else_block_skipped = 0;
 // Methods for variable related operations
 void updateSymbolVal(char* name, int type, TypedValue val);
 TypedValue symbolVal(char* name);
+TypedValue callFunction(char* name, TypedValue* args, int argCount);
 void addVariable(char* name, int type);
 void inputHandler(char* name, char* message); 	
 void printHandler(TypedValue value); 	
 int evaluateCondition(TypedValue left, int operator, TypedValue right);
 int evaluateLogic(int leftCondition, int operator, int rightCondition); 
+void executeWhileLoop(int condition);
+void checkWhileCondition();
 
 void yyerror(const char *s);
 int yylex(void);
@@ -56,18 +64,21 @@ int yylex(void);
 
 //Type definition
 %union {
-	int boolean;
-	double number;
-	char* string;
-	char* identifier;
-	int num;
-	TypedValue typedval;
-  
+    int boolean;
+    double number;
+    char* string;
+    char* identifier;
+    int num;
+    TypedValue typedval;
+    struct param_list_node* paramList;
+    struct expr_list_node* exprList;
 }
+
 
 %start program
 
 //Token definition
+%token DO
 %token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY DO
 %token TYPE_NUMBER TYPE_TEXT TYPE_LOGIC
 %token <boolean> LOGIC_TRUE LOGIC_FALSE
@@ -89,6 +100,8 @@ int yylex(void);
 %type <typedval> expression term
 %type <boolean> condition // condition evaluates to a boolean (int 0 or 1)
 %type <num> if_stmt optional_elseif_list optional_else_clause
+%type <paramList> param_list
+%type <exprList> arg_list
 
 %%
 
@@ -102,12 +115,15 @@ statement_list:
 	;
 
 statement:
-	assignment |
-	var_decl |
-	input_stmt|
-	print_stmt |
-	if_stmt
-	;
+	assignment
+    	| var_decl
+    	| input_stmt
+    	| print_stmt
+    	| if_stmt
+    	| func_decl
+    	| func_call
+    	| while_stmt
+    	;
 
 assignment:
 	IDENTIFIER SET expression '!'
@@ -117,6 +133,74 @@ assignment:
 		}
 	}
 	;
+
+func_decl:
+    DO IDENTIFIER '(' param_list ')' '{' statement_list '}'
+    {
+        if (functionCount >= 50) {
+            ERROR("Function limit reached.");
+            exit(1);
+        }
+
+        functionTable[functionCount].name = strdup($2);
+        functionTable[functionCount].paramCount = $4->count;
+        functionTable[functionCount].paramNames = $4->names;
+        // Burada gövdeyi AST gibi saklamadığımız için statement_list'i doğrudan çağırmıyoruz
+        // Ancak log'a yazabilirsin
+        INFO("Function defined: %s", $2);
+        functionCount++;
+    }
+    ;
+    
+param_list:
+    IDENTIFIER AS type
+    {
+        $$ = malloc(sizeof(struct param_list_node));
+        $$->count = 1;
+        $$->names = malloc(sizeof(char*));
+        $$->names[0] = $1;
+    }
+    | IDENTIFIER AS type ',' param_list
+    {
+        $$ = malloc(sizeof(struct param_list_node));
+        $$->count = $5->count + 1;
+        $$->names = malloc(sizeof(char*) * $$->count);
+        $$->names[0] = $1;
+        for (int i = 0; i < $5->count; i++) {
+            $$->names[i + 1] = $5->names[i];
+        }
+        free($5);
+    }
+    ;
+    
+func_call:
+    IDENTIFIER '(' arg_list ')' '!'
+    {
+        TypedValue result = callFunction($1, $3->args, $3->count);
+        // sonucu SAY ile yazdırmak istersen printHandler(result);
+    }
+    ;
+
+arg_list:
+    expression
+    {
+        $$ = malloc(sizeof(struct expr_list_node));
+        $$->count = 1;
+        $$->args = malloc(sizeof(TypedValue));
+        $$->args[0] = $1;
+    }
+    | expression ',' arg_list
+    {
+        $$ = malloc(sizeof(struct expr_list_node));
+        $$->count = $3->count + 1;
+        $$->args = malloc(sizeof(TypedValue) * $$->count);
+        $$->args[0] = $1;
+        for (int i = 0; i < $3->count; i++) {
+            $$->args[i + 1] = $3->args[i];
+        }
+        free($3);
+    }
+    ;
 
 var_decl:
 	DECLARE IDENTIFIER AS type '!'
@@ -181,52 +265,38 @@ term:
 
 expression:
     term
-    | expression PLUS term {
-        if ($1.type == 2 && $3.type == 2) { // TEXT + TEXT
-            char* newStr = malloc(strlen($1.value.text) + strlen($3.value.text) + 1);
-            strcpy(newStr, $1.value.text);
-            strcat(newStr, $3.value.text);
-            $$.type = 2; // TEXT
-            $$.value.text = newStr;
-        }
-        else if ($1.type == 1 && $3.type == 1) { // NUMBER + NUMBER
-            $$.type = 1;
-            $$.value.number = $1.value.number + $3.value.number;
-        }
-        else {
-            ERROR("Type mismatch: Cannot add these types");
-            exit(1);
-        }
+    | expression PLUS expression {
+        $$ = (TypedValue){ .type = 1 };
+        $$.value.number = $1.value.number + $3.value.number;
     }
-    | expression MINUS term {
-        if ($1.type != 1 || $3.type != 1) {
-            ERROR("Type mismatch: Both operands must be NUMBER for subtraction");
-            exit(1);
-        }
-        $$.type = 1; // NUMBER
+    | expression MINUS expression {
+        $$ = (TypedValue){ .type = 1 };
         $$.value.number = $1.value.number - $3.value.number;
     }
-    | expression TIMES term {
-        if ($1.type != 1 || $3.type != 1) {
-            ERROR("Type mismatch: Both operands must be NUMBER for multiplication");
-            exit(1);
-        }
-        $$.type = 1; // NUMBER
+    | expression TIMES expression {
+        $$ = (TypedValue){ .type = 1 };
         $$.value.number = $1.value.number * $3.value.number;
     }
-    | expression DIVIDE term {
-        if ($1.type != 1 || $3.type != 1) {
-            ERROR("Type mismatch: Both operands must be NUMBER for division");
-            exit(1);
-        }
+    | expression DIVIDE expression {
         if ($3.value.number == 0) {
-            ERROR("Division by zero");
-            exit(1);
+            ERROR("Division by zero.");
+            $$ = (TypedValue){ .type = 1, .value.number = 0 };
+        } else {
+            $$ = (TypedValue){ .type = 1 };
+            $$.value.number = $1.value.number / $3.value.number;
         }
-        $$.type = 1; // NUMBER
-        $$.value.number = $1.value.number / $3.value.number;
+    }
+    | '(' expression ')' {
+        $$ = $2;
+    }
+    | IDENTIFIER {
+        $$ = symbolVal($1);
+    }
+    | IDENTIFIER '(' arg_list ')' {
+        $$ = callFunction($1, $3->args, $3->count);
     }
     ;
+
 
 
 condition: expression operator expression
@@ -352,6 +422,34 @@ optional_else_clause:
 	}
 	;
 
+while_stmt:
+    DURING '(' condition ')' '{' statement_list '}'
+    {
+        if(skip_level == 0) {
+            executeWhileLoop($3);
+            if(while_condition) {
+                skip_level = 0;
+                printf("DEBUG: While body will be executed\n");
+            } else {
+                skip_level++;
+                printf("DEBUG: While body will be skipped\n");
+            }
+        }
+        checkWhileCondition();
+        if(while_condition && skip_level == 0) {
+            printf("DEBUG: Repeating while loop\n");
+            // Koşulu yeniden değerlendir
+            TypedValue left = symbolVal("x");
+            TypedValue right = (TypedValue){ .type = 1, .value.number = 5 };
+            int new_condition = evaluateCondition(left, 3, right); // 3 = SMALLER
+            printf("DEBUG: Re-evaluated condition: %d (x = %f)\n", new_condition, left.value.number);
+            while_condition = new_condition;
+            if(new_condition) {
+                YYACCEPT; // Döngüyü tekrar başlat
+            }
+        }
+    }
+    ;
 
 %%
 
@@ -614,8 +712,15 @@ int evaluateLogic(int leftCondition, int operator, int rightCondition) {
             exit(1);
     }
 }
+/*
+void executeWhileLoop(int condition) {
+    // Implementation of executeWhileLoop function
+}
 
-
+void checkWhileCondition() {
+    // Implementation of checkWhileCondition function
+}
+*/
 void yyerror(const char *s) {
     fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
 }

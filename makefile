@@ -1,5 +1,6 @@
 plainscript: lex.yy.c y.tab.c
-	gcc -g lex.yy.c y.tab.c -o plainscript
+	gcc -g lex.yy.c y.tab.c runtime.c -o plainscript
+
 
 lex.yy.c: y.tab.c plainscript.l
 	lex plainscript.l
