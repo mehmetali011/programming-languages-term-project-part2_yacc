@@ -167,7 +167,18 @@ DURING: Represents a while loop.
 	SAY("Counter: ")!
 	SAY(counter)!
 
+ --------------------------------------------------------------------------------
+ Complex Expressions
+ --------------------------------------------------------------------------------
+ 	// Complex expressions
 
+	DECLARE a AS NUMBER!
+	DECLARE b AS NUMBER!
+	DECLARE c AS NUMBER!
+
+	a SET 10!
+	b SET 5!
+	c SET (a PLUS b) TIMES 2 DIVIDE (b MINUS a)!
 
 
 --------------------------------------------------------------------------------
