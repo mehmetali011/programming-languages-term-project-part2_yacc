@@ -155,16 +155,19 @@ Loops
 
 DURING: Represents a while loop.
 
-	DURING (x SMALLER 10) {
-	    SAY(x)!
-	    x SET x PLUS 1!
+	DECLARE counter AS NUMBER!
+	counter SET 1!
+	DECLARE total AS NUMBER!
+	total SET 0!
+	DURING (counter SMALLER_EQUAL 10) {
+	    total SET total PLUS counter!
+	    counter SET counter PLUS 1!
 	}
+	counter SET 10!
+	SAY("Counter: ")!
+	SAY(counter)!
 
-COUNT: Represents a for loop.
 
-	COUNT i FROM 1 TO 5 {
-	    SAY(i)!
-	}
 
 
 --------------------------------------------------------------------------------
@@ -192,6 +195,29 @@ DO: Used to define a function.
 Function Call:
 
 	greet("John")!
+
+ --------------------------------------------------------------------------------
+Error Handling
+--------------------------------------------------------------------------------
+	DECLARE a AS NUMBER!
+	DECLARE b AS NUMBER!
+	
+	a SET 5!
+	b SET 0!
+	
+	TRY {
+	    DECLARE result AS NUMBER!
+	    result SET a DIVIDE b!
+	    SAY("Division result: " PLUS result)!
+	}
+	CATCH(errorMsg) {
+	    SAY("Error occurred: " PLUS errorMsg)!
+	}
+	FINALLY {
+	    SAY("Operation completed")!
+	}
+	
+	SAY("Program finished")!
 
 --------------------------------------------------------------------------------
 Operators
