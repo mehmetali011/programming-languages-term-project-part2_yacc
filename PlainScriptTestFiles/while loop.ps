@@ -1,0 +1,15 @@
+DECLARE counter AS NUMBER!
+counter SET 1!
+
+DECLARE total AS NUMBER!
+total SET 0!
+
+
+DURING (counter SMALLER_EQUAL 10) {
+    total SET total PLUS counter!
+    counter SET counter PLUS 1!
+    
+}
+counter SET 10!
+SAY("Counter: ")!
+SAY(counter)!

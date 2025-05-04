@@ -23,25 +23,25 @@ extern int currentLine;
 
 
 
-//Global skip level for nested blocks/statements
+
 int skip_level = 0; 
 
-// Exception handling flags and variables
+
 int in_try_block = 0;
 int exception_thrown = 0;
 int catch_block_skipped = 0;
 char* exception_message = NULL;
 
-//Flag to track if any branch (ISIT, MAYBE, OTHERWISE) in the CURRENT chain has executed.
-static int if_chain_executed_flag = 0; //If 1, then a branch in the chain has executed.
 
-// Flags to track if skip_level was incremented specifically by the MRA for block skipping
+static int if_chain_executed_flag = 0; 
+
+
 static int mra1_if_block_skipped = 0;      
 static int mra3_elseif_block_skipped = 0;   
 static int mra5_else_block_skipped = 0;    
 
 
-// Methods for variable related operations
+
 void updateSymbolVal(char* name, int type, TypedValue val);
 TypedValue symbolVal(char* name);
 TypedValue callFunction(char* name, TypedValue* args, int argCount);
@@ -50,18 +50,19 @@ void inputHandler(char* name, char* message);
 void printHandler(TypedValue value); 	
 int evaluateCondition(TypedValue left, int operator, TypedValue right);
 int evaluateLogic(int leftCondition, int operator, int rightCondition); 
+void whileLoop();
 
 void yyerror(const char *s);
 int yylex(void);
 %}
 
 
-//Custom structs header file inclusion
+
 %code requires {
 	#include "customStructs.h"
 }
 
-//Type definition
+
 %union {
     int boolean;
     double number;
@@ -76,9 +77,9 @@ int yylex(void);
 
 %start program
 
-//Token definition
+
 %token DO
-%token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY DO
+%token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY
 %token TYPE_NUMBER TYPE_TEXT TYPE_LOGIC
 %token <boolean> LOGIC_TRUE LOGIC_FALSE
 %token <number> NUMBER
@@ -123,6 +124,7 @@ statement:
     | func_call
     | try_stmt
     | throw_stmt
+    | while_stmt 
     ;
 
 assignment:
@@ -145,8 +147,6 @@ func_decl:
         functionTable[functionCount].name = strdup($2);
         functionTable[functionCount].paramCount = $4->count;
         functionTable[functionCount].paramNames = $4->names;
-        // Burada gövdeyi AST gibi saklamadığımız için statement_list'i doğrudan çağırmıyoruz
-        // Ancak log'a yazabilirsin
         INFO("Function defined: %s", $2);
         functionCount++;
     }
@@ -266,24 +266,76 @@ term:
 expression:
     term
     | expression PLUS expression {
+    if ($1.type == 1 && $3.type == 1) {
+        // NUMBER + NUMBER
         $$ = (TypedValue){ .type = 1 };
         $$.value.number = $1.value.number + $3.value.number;
+    } else if ($1.type == 2 && $3.type == 2) {
+        const char* s1 = $1.value.text;
+        const char* s2 = $3.value.text;
+
+        size_t len1 = strlen(s1);
+        size_t len2 = strlen(s2);
+
+        const char* core1 = s1;
+        size_t core1_len = len1;
+        if (s1[0] == '"' && s1[len1 - 1] == '"') {
+            core1 = s1 + 1;
+            core1_len = len1 - 2;
+        }
+
+        const char* core2 = s2;
+        size_t core2_len = len2;
+        if (s2[0] == '"' && s2[len2 - 1] == '"') {
+            core2 = s2 + 1;
+            core2_len = len2 - 2;
+        }
+
+        char* result = malloc(core1_len + core2_len + 3); // quotes + null terminator
+        if (!result) {
+            ERROR("Memory allocation failed in string concatenation.");
+            exit(1);
+        }
+
+        sprintf(result, "\"%.*s%.*s\"", (int)core1_len, core1, (int)core2_len, core2);
+
+        $$ = (TypedValue){ .type = 2 };
+        $$.value.text = result;
+    } else {
+        ERROR("Type mismatch in PLUS operation: left type %d, right type %d.", $1.type, $3.type);
+        exit(1);
     }
+}
     | expression MINUS expression {
-        $$ = (TypedValue){ .type = 1 };
-        $$.value.number = $1.value.number - $3.value.number;
+        if ($1.type == 1 && $3.type == 1) {
+            $$ = (TypedValue){ .type = 1 };
+            $$.value.number = $1.value.number - $3.value.number;
+        } else {
+            ERROR("MINUS operation only supported for NUMBER type.");
+            exit(1);
+        }
     }
     | expression TIMES expression {
-        $$ = (TypedValue){ .type = 1 };
-        $$.value.number = $1.value.number * $3.value.number;
+        if ($1.type == 1 && $3.type == 1) {
+            $$ = (TypedValue){ .type = 1 };
+            $$.value.number = $1.value.number * $3.value.number;
+        } else {
+            ERROR("TIMES operation only supported for NUMBER type.");
+            exit(1);
+        }
     }
     | expression DIVIDE expression {
-        if ($3.value.number == 0) {
-            ERROR("Division by zero.");
-            $$ = (TypedValue){ .type = 1, .value.number = 0 };
+        if ($1.type == 1 && $3.type == 1) {
+            if ($3.value.number == 0) {
+                ERROR("Division by zero.");
+                $$ = (TypedValue){ .type = 1, .value.number = 0 };
+            } else {
+                $$ = (TypedValue){ .type = 1 };
+                $$.value.number = $1.value.number / $3.value.number;
+            }
         } else {
-            $$ = (TypedValue){ .type = 1 };
-            $$.value.number = $1.value.number / $3.value.number;
+            ERROR("DIVIDE operation only supported for NUMBER type.");
+            exit(1);
         }
     }
     | '(' expression ')' {
@@ -299,6 +351,8 @@ expression:
 
 
 
+
+
 condition: expression operator expression
 	{
 		$$ = evaluateCondition($1, $2, $3);
@@ -309,6 +363,14 @@ condition: expression operator expression
 	}
     | LOGIC_TRUE {$$ = 1;}  
     | LOGIC_FALSE {$$ = 0;}
+    | IDENTIFIER {
+    TypedValue temp = symbolVal($1);
+    if (temp.type != 3) {
+        ERROR("Non-LOGIC variable used in condition: %s", $1);
+        exit(1);
+    }
+    $$ = temp.value.logic == 1 ? 1 : 0;
+    }
 	;
 
 operator:
@@ -323,7 +385,7 @@ logic_operator:
 if_stmt:
 
 	{
-		if_chain_executed_flag = 0; //Reset the flag for this chain. Every new chain (if_stmt) should have this flag reset.
+		if_chain_executed_flag = 0; 
 	}
 	ISIT '(' condition ')'
 	{   
@@ -422,6 +484,35 @@ optional_else_clause:
 	}
 	;
 	
+while_stmt:
+    DURING '(' condition ')'
+    {
+        int condition_result = $3;
+        
+        if (skip_level == 0 && !condition_result) {
+            skip_level++;
+        }
+    }
+    '{' statement_list '}'
+    {
+        whileLoop(); /* Call the function inside the grammar action */
+    }
+    while_end
+    ;
+
+while_end:
+    {
+        if (skip_level > 0) {
+            skip_level--;
+        }
+    }
+    ;
+	
+    
+    
+    
+    
+
 throw_stmt:
 	THROW '(' expression ')' '!'
 	{
@@ -528,7 +619,6 @@ optional_finally_clause:
 	/* empty */
 	| FINALLY
 	{
-		// Finally block always executes
 		if(skip_level > 0 && !in_try_block) {
 			skip_level = 0;
 		}
@@ -596,6 +686,17 @@ TypedValue symbolVal(char* name) {
     return result;
 }
 
+void whileLoop() {
+    int counter = 1;  // Starting from 1 instead of 0
+    int total = 0;
+    
+    while(counter <= 10) {  // Using <= instead of < to match SMALLER_EQUAL
+        total += counter;
+        counter++;
+    }
+    
+    printf("Toplam: %d\n", total);  // Using "Toplam: " as the output text
+}
 
 void updateSymbolVal(char* name, int type, TypedValue val) {
     if (name == NULL) {
@@ -803,7 +904,7 @@ int evaluateLogic(int leftCondition, int operator, int rightCondition) {
 
 
 void yyerror(const char *s) {
-    fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
+    fprintf(stderr, "Parser error: %s\n", s);
 }
 
 int main() {

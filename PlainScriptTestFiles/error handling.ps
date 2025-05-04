@@ -1,0 +1,22 @@
+// Exception handling example in PlainScript
+// Demonstrates TRY-CATCH for division by zero
+
+DECLARE a AS NUMBER!
+DECLARE b AS NUMBER!
+
+a SET 5!
+b SET 0!
+
+TRY {
+    DECLARE result AS NUMBER!
+    result SET a DIVIDE b!
+    SAY("Division result: " PLUS result)!
+}
+CATCH(errorMsg) {
+    SAY("Error occurred: " PLUS errorMsg)!
+}
+FINALLY {
+    SAY("Operation completed")!
+}
+
+SAY("Program finished")!
