@@ -78,7 +78,7 @@ int yylex(void);
 
 
 %token DO
-%token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY DO
+%token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY
 %token TYPE_NUMBER TYPE_TEXT TYPE_LOGIC
 %token <boolean> LOGIC_TRUE LOGIC_FALSE
 %token <number> NUMBER
@@ -264,24 +264,76 @@ term:
 expression:
     term
     | expression PLUS expression {
+    if ($1.type == 1 && $3.type == 1) {
+        // NUMBER + NUMBER
         $$ = (TypedValue){ .type = 1 };
         $$.value.number = $1.value.number + $3.value.number;
+    } else if ($1.type == 2 && $3.type == 2) {
+        const char* s1 = $1.value.text;
+        const char* s2 = $3.value.text;
+
+        size_t len1 = strlen(s1);
+        size_t len2 = strlen(s2);
+
+        const char* core1 = s1;
+        size_t core1_len = len1;
+        if (s1[0] == '"' && s1[len1 - 1] == '"') {
+            core1 = s1 + 1;
+            core1_len = len1 - 2;
+        }
+
+        const char* core2 = s2;
+        size_t core2_len = len2;
+        if (s2[0] == '"' && s2[len2 - 1] == '"') {
+            core2 = s2 + 1;
+            core2_len = len2 - 2;
+        }
+
+        char* result = malloc(core1_len + core2_len + 3); // quotes + null terminator
+        if (!result) {
+            ERROR("Memory allocation failed in string concatenation.");
+            exit(1);
+        }
+
+        sprintf(result, "\"%.*s%.*s\"", (int)core1_len, core1, (int)core2_len, core2);
+
+        $$ = (TypedValue){ .type = 2 };
+        $$.value.text = result;
+    } else {
+        ERROR("Type mismatch in PLUS operation: left type %d, right type %d.", $1.type, $3.type);
+        exit(1);
     }
+}
     | expression MINUS expression {
-        $$ = (TypedValue){ .type = 1 };
-        $$.value.number = $1.value.number - $3.value.number;
+        if ($1.type == 1 && $3.type == 1) {
+            $$ = (TypedValue){ .type = 1 };
+            $$.value.number = $1.value.number - $3.value.number;
+        } else {
+            ERROR("MINUS operation only supported for NUMBER type.");
+            exit(1);
+        }
     }
     | expression TIMES expression {
-        $$ = (TypedValue){ .type = 1 };
-        $$.value.number = $1.value.number * $3.value.number;
+        if ($1.type == 1 && $3.type == 1) {
+            $$ = (TypedValue){ .type = 1 };
+            $$.value.number = $1.value.number * $3.value.number;
+        } else {
+            ERROR("TIMES operation only supported for NUMBER type.");
+            exit(1);
+        }
     }
     | expression DIVIDE expression {
-        if ($3.value.number == 0) {
-            ERROR("Division by zero.");
-            $$ = (TypedValue){ .type = 1, .value.number = 0 };
+        if ($1.type == 1 && $3.type == 1) {
+            if ($3.value.number == 0) {
+                ERROR("Division by zero.");
+                $$ = (TypedValue){ .type = 1, .value.number = 0 };
+            } else {
+                $$ = (TypedValue){ .type = 1 };
+                $$.value.number = $1.value.number / $3.value.number;
+            }
         } else {
-            $$ = (TypedValue){ .type = 1 };
-            $$.value.number = $1.value.number / $3.value.number;
+            ERROR("DIVIDE operation only supported for NUMBER type.");
+            exit(1);
         }
     }
     | '(' expression ')' {
@@ -297,6 +349,8 @@ expression:
 
 
 
+
+
 condition: expression operator expression
 	{
 		$$ = evaluateCondition($1, $2, $3);
@@ -307,6 +361,14 @@ condition: expression operator expression
 	}
     | LOGIC_TRUE {$$ = 1;}  
     | LOGIC_FALSE {$$ = 0;}
+    | IDENTIFIER {
+    TypedValue temp = symbolVal($1);
+    if (temp.type != 3) {
+        ERROR("Non-LOGIC variable used in condition: %s", $1);
+        exit(1);
+    }
+    $$ = temp.value.logic == 1 ? 1 : 0;
+    }
 	;
 
 operator:
