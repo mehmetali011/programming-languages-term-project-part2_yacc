@@ -23,25 +23,25 @@ extern int currentLine;
 
 
 
-//Global skip level for nested blocks/statements
+
 int skip_level = 0; 
 
-// Exception handling flags and variables
+
 int in_try_block = 0;
 int exception_thrown = 0;
 int catch_block_skipped = 0;
 char* exception_message = NULL;
 
-//Flag to track if any branch (ISIT, MAYBE, OTHERWISE) in the CURRENT chain has executed.
-static int if_chain_executed_flag = 0; //If 1, then a branch in the chain has executed.
 
-// Flags to track if skip_level was incremented specifically by the MRA for block skipping
+static int if_chain_executed_flag = 0; 
+
+
 static int mra1_if_block_skipped = 0;      
 static int mra3_elseif_block_skipped = 0;   
 static int mra5_else_block_skipped = 0;    
 
 
-// Methods for variable related operations
+
 void updateSymbolVal(char* name, int type, TypedValue val);
 TypedValue symbolVal(char* name);
 TypedValue callFunction(char* name, TypedValue* args, int argCount);
@@ -56,12 +56,12 @@ int yylex(void);
 %}
 
 
-//Custom structs header file inclusion
+
 %code requires {
 	#include "customStructs.h"
 }
 
-//Type definition
+
 %union {
     int boolean;
     double number;
@@ -76,7 +76,7 @@ int yylex(void);
 
 %start program
 
-//Token definition
+
 %token DO
 %token DECLARE AS SET ASK RETURN THROW TRY CATCH FINALLY ISIT MAYBE OTHERWISE DURING COUNT FROM TO SAY DO
 %token TYPE_NUMBER TYPE_TEXT TYPE_LOGIC
@@ -145,8 +145,6 @@ func_decl:
         functionTable[functionCount].name = strdup($2);
         functionTable[functionCount].paramCount = $4->count;
         functionTable[functionCount].paramNames = $4->names;
-        // Burada gövdeyi AST gibi saklamadığımız için statement_list'i doğrudan çağırmıyoruz
-        // Ancak log'a yazabilirsin
         INFO("Function defined: %s", $2);
         functionCount++;
     }
@@ -323,7 +321,7 @@ logic_operator:
 if_stmt:
 
 	{
-		if_chain_executed_flag = 0; //Reset the flag for this chain. Every new chain (if_stmt) should have this flag reset.
+		if_chain_executed_flag = 0; 
 	}
 	ISIT '(' condition ')'
 	{   
@@ -528,7 +526,6 @@ optional_finally_clause:
 	/* empty */
 	| FINALLY
 	{
-		// Finally block always executes
 		if(skip_level > 0 && !in_try_block) {
 			skip_level = 0;
 		}
@@ -803,7 +800,7 @@ int evaluateLogic(int leftCondition, int operator, int rightCondition) {
 
 
 void yyerror(const char *s) {
-    fprintf(stderr, "Parser error: %s\n", s); //Burayı silebiliriz , snytax error alınırsa zaten log dosyasında gösteriliyor.
+    fprintf(stderr, "Parser error: %s\n", s);
 }
 
 int main() {

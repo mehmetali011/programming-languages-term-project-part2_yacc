@@ -27,7 +27,7 @@ typedef struct {
     struct stmt_node* body; 
 } Function;
 
-struct stmt_node; // forward declaration
+struct stmt_node; 
 
 struct param_list_node {
     char** names;
@@ -42,7 +42,5 @@ struct expr_list_node {
 extern Function functionTable[50];
 extern int functionCount;
 
-
-//Other structs can be added here
 
 #endif // CUSTOM_STRUCTS_H
